@@ -66,13 +66,25 @@ class _Auditor:
             logger.info(f'Incrementing count for ')
 
 
+class _Enforcer:
+    def enforce_before_crawl(self, resp) -> bool:
+        # check for 200 here in resp
+        # check for filesize here
+        pass  # TODO
+
+    def enforce_after_crawl(self, links) -> iter:
+        pass  # TODO
+
+
 tokenizer = _Tokenizer()
 auditor = _Auditor()
+enforcer = _Enforcer()
 
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+    return enforcer.enforce_after_crawl(links)
+    # return [link for link in links if is_valid(link)]
 
 
 def extract_next_links(url, resp):
@@ -81,7 +93,10 @@ def extract_next_links(url, resp):
     # print("RespURL: " + resp.url)
     # print("Status:  " + str(resp.status))
     # print("Error:   " + str(resp.error))
-    #print(resp.raw_response)
+    # print(resp.raw_response)
+
+    if not enforcer.enforce_before_crawl(resp):
+        return []
 
     # Walk the page tree once to collect statistics on the page.
     word_count, tokens = tokenizer.tokenize_page(resp.raw_response.text)
