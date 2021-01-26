@@ -1,5 +1,6 @@
 import re
 from urllib.parse import urlparse
+from lxml import etree, html
 
 
 def scraper(url, resp):
@@ -9,7 +10,27 @@ def scraper(url, resp):
 
 def extract_next_links(url, resp):
     # Implementation requred.
-    return list()
+    print("URL:     " + url)
+    print("RespURL: " + resp.url)
+    print("Status:  " + str(resp.status))
+    print("Error:   " + str(resp.error))
+    #print(resp.raw_response)
+
+    extracted_links = list()
+
+    try:
+        html_response = html.document_fromstring(resp.raw_response.content if resp.raw_response is not None else "")
+        html_response.make_links_absolute(resp.url)
+        html_response_links = [link for link in html_response.iterlinks() if link[0]]
+
+        for link in html_response_links:
+            if link[0].tag == "a" and link[1] == "href":
+                extracted_links.append(link[2])
+    except etree.ParserError as e:
+        print("Parser Error for url " + resp.url + ": " + repr(e))
+
+    print(extracted_links)
+    return extracted_links
 
 
 def is_valid(url):
