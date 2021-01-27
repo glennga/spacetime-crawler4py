@@ -58,30 +58,38 @@ class _Auditor:
             with shelve.open("longest_page_stat.db") as db:
                 db["largest"] = self.longest_page_stat
 
-    def handle_q3(self, tokens):
+    def handle_q3(self, url, tokens):
+        token_logger.info("Processing tokens from url: " + url)
         with shelve.open("common_words_table.db") as db:
-            # logger.info("Tokens: " + str(tokens))
+            old_token_db = set(token[0] for token in sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50])
             for token in tokens:
                 if token and token not in db:
                     db[token] = 1
-                    #logger.info(f'Found new token: {token}')
+                    #token_logger.info(f'New token added to dictionary: {token}')
                 elif token:
                     db[token] += 1
                     #logger.info(f'Incrementing token count for token: {token}')
-            token_logger.info("Top 50 tokens at this stage: " + str(sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50]))
+            new_token_db = set(token[0] for token in sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50])
+            token_logger.info("New words entering Top 50: " + str(set(token for token in new_token_db if token not in old_token_db)))
+            token_logger.info("Words leaving top 50: " + str(set(token for token in old_token_db if token not in new_token_db)))
+            token_logger.info("Top 50 tokens now: " + str(sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50]))
 
 
     def handle_q4(self, url):
         # Note: we are assuming that unique URLs are being given here.
         with shelve.open("ics_subdomain_table.db") as db:
             parsed = urlparse(url)
-            is_ics_subdomain = re.match(r".*\.ics.uci.edu.*", parsed.netloc)
+            is_ics_subdomain = re.match(r".*\.ics\.uci\.edu.*", parsed.netloc)
+            #logger.info('Subdomain check for ' + parsed.netloc + " returns " + repr(is_ics_subdomain))
             if is_ics_subdomain and parsed.netloc not in db:
                 db[parsed.netloc] = 1
                 logger.info(f'Found new subdomain for ics.uci.edu: {parsed.netloc}')
             elif is_ics_subdomain:
                 db[parsed.netloc] += 1
                 logger.info(f'Incrementing count for existing subdomain: {parsed.netloc}')
+            else:
+                pass
+                #logger.info("The entry " + parsed.netloc + " is not a subdomain")
 
 
 class _Enforcer:
@@ -192,7 +200,7 @@ def extract_next_links(url, resp):
     # Walk the page tree once to collect statistics on the page.
     word_count, tokens = tokenizer.tokenize_page(resp.raw_response.text)
     auditor.handle_q2(url, word_count)
-    auditor.handle_q3(tokens)
+    auditor.handle_q3(url, tokens)
     auditor.handle_q4(url)
 
     # Walk the page tree again to collect links.
