@@ -8,7 +8,7 @@ from lxml import etree, html
 from utils.download import download
 from urllib.robotparser import RobotFileParser
 
-# TODO (GLENN): Replace the use of netloc w/ hostname.
+
 logger = get_logger('Scraper')
 token_logger = get_logger('Token')
 config = None
@@ -79,17 +79,17 @@ class _Auditor:
         # Note: we are assuming that unique URLs are being given here.
         with shelve.open("ics_subdomain_table.db") as db:
             parsed = urlparse(url)
-            is_ics_subdomain = re.match(r".*\.ics\.uci\.edu.*", parsed.netloc)
-            #logger.info('Subdomain check for ' + parsed.netloc + " returns " + repr(is_ics_subdomain))
-            if is_ics_subdomain and parsed.netloc not in db:
-                db[parsed.netloc] = 1
-                logger.info(f'Found new subdomain for ics.uci.edu: {parsed.netloc}')
+            is_ics_subdomain = re.match(r".*\.ics\.uci\.edu.*", parsed.netloc.lower())
+            #logger.info('Subdomain check for ' + parsed.netloc.lower() + " returns " + repr(is_ics_subdomain))
+            if is_ics_subdomain and parsed.netloc.lower() not in db:
+                db[parsed.netloc.lower()] = 1
+                logger.info(f'Found new subdomain for ics.uci.edu: {parsed.netloc.lower()}')
             elif is_ics_subdomain:
-                db[parsed.netloc] += 1
-                logger.info(f'Incrementing count for existing subdomain: {parsed.netloc}')
+                db[parsed.netloc.lower()] += 1
+                logger.info(f'Incrementing count for existing subdomain: {parsed.netloc.lower()}')
             else:
                 pass
-                #logger.info("The entry " + parsed.netloc + " is not a subdomain")
+                #logger.info("The entry " + parsed.netloc.lower() + " is not a subdomain")
 
 
 class _Enforcer:
@@ -140,7 +140,7 @@ class _Enforcer:
         global config
 
         time.sleep(config.time_delay)
-        robots_url = parsed.scheme + '://' + parsed.netloc + '/robots.txt'
+        robots_url = parsed.scheme + '://' + parsed.netloc.lower() + '/robots.txt'
         resp = download(robots_url, config, logger)
         if resp.status != 200:
             logger.warn(f'Could not find robots.txt file for site {robots_url}.')
@@ -160,14 +160,14 @@ class _Enforcer:
         enforced_links = _Enforcer.URLIterable()
         for link in links:
             parsed = urlparse(link)
-            if parsed.netloc not in self.robots_table:
-                self.robots_table[parsed.netloc] = self._fetch_robots(parsed)
+            if parsed.netloc.lower() not in self.robots_table:
+                self.robots_table[parsed.netloc.lower()] = self._fetch_robots(parsed)
 
             if not is_valid(link):
                 continue
 
             elif True:  # TODO: add the checks for infinite traps and sets of similar pages w/ no information.
-                enforced_links.append_url(link, self.robots_table[parsed.netloc])
+                enforced_links.append_url(link, self.robots_table[parsed.netloc.lower()])
 
         return enforced_links
 
@@ -235,9 +235,9 @@ def is_valid(url):
             return False
 
         # Note: must be infix search to account for port numbers in net location.
-        elif not re.match(r".*\.ics.uci.edu.*|.*\.cs.uci.edu.*|.*\.informatics.uci.edu.*|"
-                          r".*\.stat.uci.edu.*", parsed.netloc) and \
-                not (re.match(r".*\.today.uci.edu.*", parsed.netloc) and
+        elif not re.match(r".*\.ics\.uci\.edu.*|.*\.cs\.uci\.edu.*|.*\.informatics\.uci\.edu.*|"
+                          r".*\.stat\.uci\.edu.*", parsed.hostname) and \
+                not (re.match(r".*\.today\.uci\.edu.*", parsed.hostname) and
                      re.match(r"/department/information_computer_sciences.*", parsed.path)):
             return False
 
