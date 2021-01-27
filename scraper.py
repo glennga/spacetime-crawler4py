@@ -1,11 +1,15 @@
 import re
+import shelve
+import time
 
 from utils import get_logger
 from urllib.parse import urlparse
 from lxml import etree, html
-
+from utils.download import download
+from urllib.robotparser import RobotFileParser
 
 logger = get_logger('Scraper')
+# TODO (GLENN): Replace the use of netloc w/ hostname.
 
 
 class _Tokenizer:
@@ -67,13 +71,84 @@ class _Auditor:
 
 
 class _Enforcer:
-    def enforce_before_crawl(self, resp) -> bool:
-        # check for 200 here in resp
-        # check for filesize here
-        pass  # TODO
+    class URLIterable:
+        """ When called by the worker thread, we introduce a delay before returning the associated URL. """
+        def __init__(self):
+            self.links, self.delays = [], []
+            self.current_position = 0
+
+        def append_url(self, url, delay):
+            self.links.append(url)
+            self.delays.append(delay)
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            if self.current_position >= len(self.delays):
+                raise StopIteration
+
+            time.sleep(self.delays[self.current_position])
+            url = self.links[self.current_position]
+            self.current_position += 1
+            return url
+
+    def __init__(self):
+        self.large_page_threshold_bytes = 1.0e8
+        self.robots_table = shelve.open('robots.shelve')
+        self.robots_parser = RobotFileParser()
+        self.config = None
+
+        logger.info(f"Setting large page threshold to be: {self.large_page_threshold_bytes} bytes.")
+
+    def reset(self, config):
+        self.config = config
+
+    def enforce_before_crawl(self, url, resp) -> bool:
+        if resp.status != 200:
+            logger.warn(f"Page found w/ non-200 status code: {url}")
+            return False
+
+        elif len(resp.raw_response.content) > self.large_page_threshold_bytes:
+            logger.warn(f"Page found w/ size greater than large page threshold: {url} of size "
+                        f"{len(resp.raw_response.content)} bytes.")
+            return False
+
+        return True
+
+    def _fetch_robots(self, parsed) -> float:
+        """ Time in seconds that indicates **additional** time to wait, based on the URL's robots.txt file. """
+        time.sleep(self.config.time_delay)
+        robots_url = parsed.scheme + '://' + parsed.netloc + '/robots.txt'
+        resp = download(robots_url, self.config, logger)
+        if resp.status != 200:
+            logger.warn(f'Could not find robots.txt file for site {robots_url}.')
+            return 0
+        else:
+            for line in resp.raw_response.text.split('\n'):
+                if 'crawl-delay' in line:  # Crawl delays are in seconds.
+                    crawl_delay_s = float(line.split(':')[1].strip())
+                    logger.info(f'crawl-delay found for site {robots_url} of {crawl_delay_s} seconds.')
+                    return max(crawl_delay_s, self.config.time_delay) - self.config.time_delay
+
+            logger.info(f'Could not find crawl-delay in robots.txt file for site {robots_url}. Using default '
+                        f'delay of {self.config.time_delay} seconds.')
+            return 0
 
     def enforce_after_crawl(self, links) -> iter:
-        pass  # TODO
+        enforced_links = _Enforcer.URLIterable()
+        for link in links:
+            parsed = urlparse(link)
+            if parsed.netloc not in self.robots_table:
+                self.robots_table[parsed.netloc] = self._fetch_robots(parsed)
+
+            if not is_valid(link):
+                continue
+
+            elif True:  # TODO: add the checks for infinite traps and sets of similar pages w/ no information.
+                enforced_links.append_url(link, self.robots_table[parsed.netloc])
+
+        return enforced_links
 
 
 tokenizer = _Tokenizer()
@@ -81,10 +156,10 @@ auditor = _Auditor()
 enforcer = _Enforcer()
 
 
-def scraper(url, resp):
+def scraper(url, resp, config):
+    enforcer.reset(config)
     links = extract_next_links(url, resp)
     return enforcer.enforce_after_crawl(links)
-    # return [link for link in links if is_valid(link)]
 
 
 def extract_next_links(url, resp):
@@ -95,7 +170,7 @@ def extract_next_links(url, resp):
     # print("Error:   " + str(resp.error))
     # print(resp.raw_response)
 
-    if not enforcer.enforce_before_crawl(resp):
+    if not enforcer.enforce_before_crawl(url, resp):
         return []
 
     # Walk the page tree once to collect statistics on the page.
