@@ -51,7 +51,15 @@ class _Auditor:
 
     def handle_q3(self, tokens):
         # TODO: Finish this case, log each time a new entry is added to the common words table.
-        pass
+        # logger.info("Tokens: " + str(tokens))
+        for token in tokens:
+            if token and token not in self.common_words_table:
+                self.common_words_table[token] = 1
+                #logger.info(f'Found new token: {token}')
+            elif token:
+                self.common_words_table[token] += 1
+                #logger.info(f'Incrementing token count for token: {token}')
+        #logger.info("Top 50 tokens at this stage: " + str(sorted(self.common_words_table.items(), key=lambda x: [-x[1], x[0]])[:50]))
 
     def handle_q4(self, url):
         # Note: we are assuming that unique URLs are being given here.
@@ -63,7 +71,7 @@ class _Auditor:
             logger.info(f'Found new subdomain for ics.uci.edu: {parsed.netloc}')
         elif is_ics_subdomain:
             self.ics_subdomain_table[parsed.netloc] += 1
-            logger.info(f'Incrementing count for ')
+            logger.info(f'Incrementing count for existing subdomain: {parsed.netloc}')
 
 
 class _Enforcer:
@@ -83,8 +91,8 @@ enforcer = _Enforcer()
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
-    return enforcer.enforce_after_crawl(links)
-    # return [link for link in links if is_valid(link)]
+    #return enforcer.enforce_after_crawl(links)
+    return [link for link in links if is_valid(link)]
 
 
 def extract_next_links(url, resp):
@@ -95,12 +103,15 @@ def extract_next_links(url, resp):
     # print("Error:   " + str(resp.error))
     # print(resp.raw_response)
 
-    if not enforcer.enforce_before_crawl(resp):
-        return []
+    #if not enforcer.enforce_before_crawl(resp):
+       #return []
 
     # Walk the page tree once to collect statistics on the page.
     word_count, tokens = tokenizer.tokenize_page(resp.raw_response.text)
-    auditor.handle_q2(url, word_count) and auditor.handle_q3(tokens) and auditor.handle_q4(url)
+    auditor.handle_q2(url, word_count)
+    auditor.handle_q3(tokens)
+    auditor.handle_q4(url)
+
 
     # Walk the page tree again to collect links.
     extracted_links = list()
@@ -111,7 +122,15 @@ def extract_next_links(url, resp):
 
         for link in html_response_links:
             if link[0].tag == "a" and link[1] == "href":
-                extracted_links.append(link[2])
+                parsed = urlparse(link[2])
+                # Separated the filtered url parsing in case we need to log this
+                filtered_url = (parsed.scheme + "://" + parsed.netloc + parsed.path
+                                       # TODO: Do we keep the params and query?
+                                       + ((";" + parsed.params) if len(parsed.params) > 0 else "")
+                                       + (("?" + parsed.query) if len(parsed.query) > 0 else "")
+                                       )
+                #logger.info("Filtered URL: " + filtered_url)
+                extracted_links.append(filtered_url)
     except etree.ParserError as e:
         logger.error("Parser Error for url " + resp.url + ": " + repr(e))
 
