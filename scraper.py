@@ -3,9 +3,11 @@ import re
 from utils import get_logger
 from urllib.parse import urlparse
 from lxml import etree, html
+import shelve
 
 
 logger = get_logger('Scraper')
+token_logger = get_logger('Token')
 
 
 class _Tokenizer:
@@ -37,9 +39,10 @@ class _Tokenizer:
 
 class _Auditor:
     def __init__(self):
-        self.longest_page_stat = ('', 0)
-        self.common_words_table = {}
-        self.ics_subdomain_table = {}
+        with shelve.open("longest_page_stat.db") as db:
+            self.longest_page_stat = (db["largest"][0], db["largest"][1]) if "largest" in db else ("", 0)
+        #self.common_words_table = {}}
+        #self.ics_subdomain_table = {}
 
     def handle_q1(self, url):
         pass  # This is to be handled offline (i.e. looking at the log files).
@@ -48,30 +51,33 @@ class _Auditor:
         if n > self.longest_page_stat[1]:
             self.longest_page_stat = (url, n)
             logger.info(f'New longest page found: "{url}" with {n} words.')
+            with shelve.open("longest_page_stat.db") as db:
+                db["largest"] = self.longest_page_stat
 
     def handle_q3(self, tokens):
-        # TODO: Finish this case, log each time a new entry is added to the common words table.
-        # logger.info("Tokens: " + str(tokens))
-        for token in tokens:
-            if token and token not in self.common_words_table:
-                self.common_words_table[token] = 1
-                #logger.info(f'Found new token: {token}')
-            elif token:
-                self.common_words_table[token] += 1
-                #logger.info(f'Incrementing token count for token: {token}')
-        #logger.info("Top 50 tokens at this stage: " + str(sorted(self.common_words_table.items(), key=lambda x: [-x[1], x[0]])[:50]))
+        with shelve.open("common_words_table.db") as db:
+            # logger.info("Tokens: " + str(tokens))
+            for token in tokens:
+                if token and token not in db:
+                    db[token] = 1
+                    #logger.info(f'Found new token: {token}')
+                elif token:
+                    db[token] += 1
+                    #logger.info(f'Incrementing token count for token: {token}')
+            token_logger.info("Top 50 tokens at this stage: " + str(sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50]))
+
 
     def handle_q4(self, url):
         # Note: we are assuming that unique URLs are being given here.
-        parsed = urlparse(url)
-
-        is_ics_subdomain = re.match(r".*\.ics.uci.edu.*", parsed.netloc)
-        if is_ics_subdomain and parsed.netloc not in self.ics_subdomain_table:
-            self.ics_subdomain_table[parsed.netloc] = 1
-            logger.info(f'Found new subdomain for ics.uci.edu: {parsed.netloc}')
-        elif is_ics_subdomain:
-            self.ics_subdomain_table[parsed.netloc] += 1
-            logger.info(f'Incrementing count for existing subdomain: {parsed.netloc}')
+        with shelve.open("ics_subdomain_table.db") as db:
+            parsed = urlparse(url)
+            is_ics_subdomain = re.match(r".*\.ics.uci.edu.*", parsed.netloc)
+            if is_ics_subdomain and parsed.netloc not in db:
+                db[parsed.netloc] = 1
+                logger.info(f'Found new subdomain for ics.uci.edu: {parsed.netloc}')
+            elif is_ics_subdomain:
+                db[parsed.netloc] += 1
+                logger.info(f'Incrementing count for existing subdomain: {parsed.netloc}')
 
 
 class _Enforcer:
