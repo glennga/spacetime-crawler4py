@@ -113,3 +113,7 @@ venv.bak/
 .idea
 venv37
 venvu
+
+# Our program's .db files
+*.db
+*.db.*
