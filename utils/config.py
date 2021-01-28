@@ -10,6 +10,12 @@ class Config(object):
         self.threads_count = int(config["LOCAL PROPERTIES"]["THREADCOUNT"])
         self.save_file = config["LOCAL PROPERTIES"]["SAVE"]
 
+        # Files pertaining to our scraper.
+        self.longest_page_file = config["LOCAL PROPERTIES"]["LONGESTPAGE"]
+        self.common_words_file = config["LOCAL PROPERTIES"]["COMMONWORDS"]
+        self.ics_subdomain_file = config["LOCAL PROPERTIES"]["ICSSUBDOMAIN"]
+        self.robots_file = config["LOCAL PROPERTIES"]["ROBOTS"]
+
         self.host = config["CONNECTION"]["HOST"]
         self.port = int(config["CONNECTION"]["PORT"])
 
@@ -17,3 +23,7 @@ class Config(object):
         self.time_delay = float(config["CRAWLER"]["POLITENESS"])
 
         self.cache_server = None
+
+    def get_scraper_files(self):
+        """ :return All files used by our scraper. """
+        return [self.longest_page_file, self.common_words_file, self.ics_subdomain_file, self.robots_file]

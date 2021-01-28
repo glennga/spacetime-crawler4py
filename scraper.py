@@ -10,8 +10,6 @@ from urllib.robotparser import RobotFileParser
 
 
 logger = get_logger('Scraper')
-token_logger = get_logger('Token')
-config = None
 
 
 class _Tokenizer:
@@ -42,11 +40,11 @@ class _Tokenizer:
 
 
 class _Auditor:
-    def __init__(self):
-        with shelve.open("longest_page_stat.db") as db:
+    def __init__(self, config):
+        self.config = config
+        self.token_logger = get_logger('Token')
+        with shelve.open(self.config.longest_page_file) as db:
             self.longest_page_stat = (db["largest"][0], db["largest"][1]) if "largest" in db else ("", 0)
-        #self.common_words_table = {}}
-        #self.ics_subdomain_table = {}
 
     def handle_q1(self, url):
         pass  # This is to be handled offline (i.e. looking at the log files).
@@ -55,12 +53,12 @@ class _Auditor:
         if n > self.longest_page_stat[1]:
             self.longest_page_stat = (url, n)
             logger.info(f'New longest page found: "{url}" with {n} words.')
-            with shelve.open("longest_page_stat.db") as db:
+            with shelve.open(self.config.longest_page_file) as db:
                 db["largest"] = self.longest_page_stat
 
     def handle_q3(self, url, tokens):
-        token_logger.info("Processing tokens from url: " + url)
-        with shelve.open("common_words_table.db") as db:
+        self.token_logger.info("Processing tokens from url: " + url)
+        with shelve.open(self.config.common_words_file) as db:
             old_token_db = set(token[0] for token in sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50])
             for token in tokens:
                 if token and token not in db:
@@ -70,14 +68,13 @@ class _Auditor:
                     db[token] += 1
                     #logger.info(f'Incrementing token count for token: {token}')
             new_token_db = set(token[0] for token in sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50])
-            token_logger.info("New words entering Top 50: " + str(set(token for token in new_token_db if token not in old_token_db)))
-            token_logger.info("Words leaving top 50: " + str(set(token for token in old_token_db if token not in new_token_db)))
-            token_logger.info("Top 50 tokens now: " + str(sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50]))
-
+            self.token_logger.info("New words entering Top 50: " + str(set(token for token in new_token_db if token not in old_token_db)))
+            self.token_logger.info("Words leaving top 50: " + str(set(token for token in old_token_db if token not in new_token_db)))
+            self.token_logger.info("Top 50 tokens now: " + str(sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50]))
 
     def handle_q4(self, url):
         # Note: we are assuming that unique URLs are being given here.
-        with shelve.open("ics_subdomain_table.db") as db:
+        with shelve.open(self.config.ics_subdomain_file) as db:
             parsed = urlparse(url)
             is_ics_subdomain = re.match(r".*\.ics\.uci\.edu.*", parsed.netloc.lower())
             #logger.info('Subdomain check for ' + parsed.netloc.lower() + " returns " + repr(is_ics_subdomain))
@@ -115,10 +112,13 @@ class _Enforcer:
             self.current_position += 1
             return url
 
-    def __init__(self):
+        def __str__(self):
+            return str(self.links)
+
+    def __init__(self, config):
         self.large_page_threshold_bytes = 1.0e8
-        self.robots_table = shelve.open('robots.shelve')
         self.robots_parser = RobotFileParser()
+        self.config = config
 
         logger.info(f"Setting large page threshold to be: {self.large_page_threshold_bytes} bytes.")
 
@@ -134,14 +134,11 @@ class _Enforcer:
 
         return True
 
-    @staticmethod
-    def _fetch_robots(parsed) -> float:
+    def _fetch_robots(self, parsed) -> float:
         """ Time in seconds that indicates **additional** time to wait, based on the URL's robots.txt file. """
-        global config
-
-        time.sleep(config.time_delay)
+        time.sleep(self.config.time_delay)
         robots_url = parsed.scheme + '://' + parsed.netloc.lower() + '/robots.txt'
-        resp = download(robots_url, config, logger)
+        resp = download(robots_url, self.config, logger)
         if resp.status != 200:
             logger.warn(f'Could not find robots.txt file for site {robots_url}.')
             return 0
@@ -150,82 +147,76 @@ class _Enforcer:
                 if 'crawl-delay' in line:  # Crawl delays are in seconds.
                     crawl_delay_s = float(line.split(':')[1].strip())
                     logger.info(f'crawl-delay found for site {robots_url} of {crawl_delay_s} seconds.')
-                    return max(crawl_delay_s, config.time_delay) - config.time_delay
+                    return max(crawl_delay_s, self.config.time_delay) - self.config.time_delay
 
             logger.info(f'Could not find crawl-delay in robots.txt file for site {robots_url}. Using default '
-                        f'delay of {config.time_delay} seconds.')
+                        f'delay of {self.config.time_delay} seconds.')
             return 0
 
     def enforce_after_crawl(self, links) -> iter:
+        robots_table = shelve.open(self.config.robots_file)
         enforced_links = _Enforcer.URLIterable()
-        for link in links:
-            parsed = urlparse(link)
-            if parsed.netloc.lower() not in self.robots_table:
-                self.robots_table[parsed.netloc.lower()] = self._fetch_robots(parsed)
 
+        for link in links:
             if not is_valid(link):
                 continue
 
-            elif True:  # TODO: add the checks for infinite traps and sets of similar pages w/ no information.
-                enforced_links.append_url(link, self.robots_table[parsed.netloc.lower()])
+            parsed = urlparse(link)
+            if parsed.netloc.lower() not in robots_table:
+                robots_table[parsed.netloc.lower()] = self._fetch_robots(parsed)
 
+            if True:  # TODO: add the checks for infinite traps and sets of similar pages w/ no information.
+                enforced_links.append_url(link, robots_table[parsed.netloc.lower()])
+
+        robots_table.close()
         return enforced_links
 
 
-tokenizer = _Tokenizer()
-auditor = _Auditor()
-enforcer = _Enforcer()
+class Scraper:
+    def __init__(self, config):
+        self.config = config
+        self.tokenizer = _Tokenizer()
+        self.auditor = _Auditor(self.config)
+        self.enforcer = _Enforcer(self.config)
 
+    def scrape(self, url, resp):
+        links = self.extract_next_links(url, resp)
+        enforced_links = self.enforcer.enforce_after_crawl(links)
+        logger.info(f'Returning the following extracted links: {enforced_links}')
+        return enforced_links
 
-def scraper(url, resp, caller_config):
-    global config
-    if config is None:
-        config = caller_config
+    def extract_next_links(self, url, resp):
+        if not self.enforcer.enforce_before_crawl(url, resp):
+            return []
 
-    links = extract_next_links(url, resp)
-    return enforcer.enforce_after_crawl(links)
+        # Walk the page tree once to collect statistics on the page.
+        word_count, tokens = self.tokenizer.tokenize_page(resp.raw_response.text)
+        self.auditor.handle_q2(url, word_count)
+        self.auditor.handle_q3(url, tokens)
+        self.auditor.handle_q4(url)
 
+        # Walk the page tree again to collect links.
+        extracted_links = list()
+        try:
+            html_response = html.document_fromstring(resp.raw_response.content if resp.raw_response is not None else "")
+            html_response.make_links_absolute(resp.url)
+            html_response_links = [link for link in html_response.iterlinks() if link[0]]
 
-def extract_next_links(url, resp):
-    # Implementation requred.
-    # print("URL:     " + url)
-    # print("RespURL: " + resp.url)
-    # print("Status:  " + str(resp.status))
-    # print("Error:   " + str(resp.error))
-    # print(resp.raw_response)
+            for link in html_response_links:
+                if link[0].tag == "a" and link[1] == "href":
+                    parsed = urlparse(link[2])
+                    # Separated the filtered url parsing in case we need to log this
+                    filtered_url = (parsed.scheme + "://" + parsed.netloc + parsed.path
+                                           # TODO: Do we keep the params and query?
+                                           + ((";" + parsed.params) if len(parsed.params) > 0 else "")
+                                           + (("?" + parsed.query) if len(parsed.query) > 0 else "")
+                                           )
+                    #logger.info("Filtered URL: " + filtered_url)
+                    extracted_links.append(filtered_url)
+        except etree.ParserError as e:
+            logger.error("Parser Error for url " + resp.url + ": " + repr(e))
 
-    if not enforcer.enforce_before_crawl(url, resp):
-        return []
-
-    # Walk the page tree once to collect statistics on the page.
-    word_count, tokens = tokenizer.tokenize_page(resp.raw_response.text)
-    auditor.handle_q2(url, word_count)
-    auditor.handle_q3(url, tokens)
-    auditor.handle_q4(url)
-
-    # Walk the page tree again to collect links.
-    extracted_links = list()
-    try:
-        html_response = html.document_fromstring(resp.raw_response.content if resp.raw_response is not None else "")
-        html_response.make_links_absolute(resp.url)
-        html_response_links = [link for link in html_response.iterlinks() if link[0]]
-
-        for link in html_response_links:
-            if link[0].tag == "a" and link[1] == "href":
-                parsed = urlparse(link[2])
-                # Separated the filtered url parsing in case we need to log this
-                filtered_url = (parsed.scheme + "://" + parsed.netloc + parsed.path
-                                       # TODO: Do we keep the params and query?
-                                       + ((";" + parsed.params) if len(parsed.params) > 0 else "")
-                                       + (("?" + parsed.query) if len(parsed.query) > 0 else "")
-                                       )
-                #logger.info("Filtered URL: " + filtered_url)
-                extracted_links.append(filtered_url)
-    except etree.ParserError as e:
-        logger.error("Parser Error for url " + resp.url + ": " + repr(e))
-
-    logger.info(f'Returning the following extracted links: {extracted_links}')
-    return extracted_links
+        return extracted_links
 
 
 def is_valid(url):
