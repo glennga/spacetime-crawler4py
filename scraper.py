@@ -189,9 +189,9 @@ class Scraper:
         logger.info(f'Returning the following extracted links: {enforced_links}')
         return enforced_links
 
-    def extract_next_links(self, url, resp):
+    def extract_next_links(self, url, resp) -> set:
         if not self.enforcer.enforce_before_crawl(url, resp):
-            return []
+            return set()
 
         # Walk the page tree once to collect statistics on the page.
         word_count, tokens = self.tokenizer.tokenize_page(resp.raw_response.text)
@@ -215,12 +215,13 @@ class Scraper:
                                            + ((";" + parsed.params) if len(parsed.params) > 0 else "")
                                            + (("?" + parsed.query) if len(parsed.query) > 0 else "")
                                            )
-                    logger.debug("Filtered URL: " + filtered_url)
+                    if link[2] != filtered_url:
+                        logger.debug(f"Filtered URL: {filtered_url} from {link[2]}.")
                     extracted_links.append(filtered_url)
         except etree.ParserError as e:
-            logger.error("Parser Error for url " + resp.url + ": " + repr(e))
+            logger.error("Parser error for url " + resp.url + ": " + repr(e) + ".")
 
-        return extracted_links
+        return set(extracted_links)
 
 
 def is_valid(url):
