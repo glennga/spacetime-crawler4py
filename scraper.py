@@ -68,8 +68,13 @@ class _Auditor:
                     db[token] += 1
                     #logger.info(f'Incrementing token count for token: {token}')
             new_token_db = set(token[0] for token in sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50])
-            self.token_logger.info("New words entering Top 50: " + str(set(token for token in new_token_db if token not in old_token_db)))
-            self.token_logger.info("Words leaving top 50: " + str(set(token for token in old_token_db if token not in new_token_db)))
+
+            words_entering = set(token for token in new_token_db if token not in old_token_db)
+            words_leaving = set(token for token in old_token_db if token not in new_token_db)
+            if len(words_entering) != 0:
+                self.token_logger.info("New words entering Top 50: " + str(words_entering))
+            if len(words_leaving) != 0:
+                self.token_logger.info("Words leaving top 50: " + str(words_leaving))
             self.token_logger.info("Top 50 tokens now: " + str(sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50]))
 
     def handle_q4(self, url):
@@ -77,7 +82,7 @@ class _Auditor:
         with shelve.open(self.config.ics_subdomain_file) as db:
             parsed = urlparse(url)
             is_ics_subdomain = re.match(r".*\.ics\.uci\.edu.*", parsed.netloc.lower())
-            #logger.info('Subdomain check for ' + parsed.netloc.lower() + " returns " + repr(is_ics_subdomain))
+            logger.debug('Subdomain check for ' + parsed.netloc.lower() + " returns " + repr(is_ics_subdomain))
             if is_ics_subdomain and parsed.netloc.lower() not in db:
                 db[parsed.netloc.lower()] = 1
                 logger.info(f'Found new subdomain for ics.uci.edu: {parsed.netloc.lower()}')
@@ -85,8 +90,7 @@ class _Auditor:
                 db[parsed.netloc.lower()] += 1
                 logger.info(f'Incrementing count for existing subdomain: {parsed.netloc.lower()}')
             else:
-                pass
-                #logger.info("The entry " + parsed.netloc.lower() + " is not a subdomain")
+                logger.debug("The entry " + parsed.netloc.lower() + " is not a subdomain")
 
 
 class _Enforcer:
@@ -211,7 +215,7 @@ class Scraper:
                                            + ((";" + parsed.params) if len(parsed.params) > 0 else "")
                                            + (("?" + parsed.query) if len(parsed.query) > 0 else "")
                                            )
-                    #logger.info("Filtered URL: " + filtered_url)
+                    logger.debug("Filtered URL: " + filtered_url)
                     extracted_links.append(filtered_url)
         except etree.ParserError as e:
             logger.error("Parser Error for url " + resp.url + ": " + repr(e))
@@ -223,16 +227,18 @@ def is_valid(url):
     try:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
+            logger.debug(f"Invalid URL found: {url}. Scheme is not HTTP or HTTPS.")
             return False
 
         # Note: must be infix search to account for port numbers in net location.
         elif not re.match(r".*\.ics\.uci\.edu.*|.*\.cs\.uci\.edu.*|.*\.informatics\.uci\.edu.*|"
-                          r".*\.stat\.uci\.edu.*", parsed.hostname) and \
-                not (re.match(r".*\.today\.uci\.edu.*", parsed.hostname) and
+                          r".*\.stat\.uci\.edu.*", parsed.netloc.lower()) and \
+                not (re.match(r".*\.today\.uci\.edu.*", parsed.netloc.lower()) and
                      re.match(r"/department/information_computer_sciences.*", parsed.path)):
+            logger.debug(f"Invalid URL found: {url}. Not in valid set of domains.")
             return False
 
-        return not re.match(
+        elif re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
@@ -240,7 +246,11 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
+            logger.debug(f"Invalid URL found: {url}. File type is invalid.")
+            return False
+
+        return True
 
     except TypeError:
         print("TypeError for ", parsed)
