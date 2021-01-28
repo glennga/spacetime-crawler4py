@@ -35,7 +35,7 @@ class _Tokenizer:
                     element.tag != 'script' and element.tag != 'style':
                 text_body += element.text
 
-        non_stopped_tokens = [t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 0]
+        non_stopped_tokens = [t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1]
         return len(non_stopped_tokens), set([t for t in non_stopped_tokens if t not in self.stop_words])
 
 
