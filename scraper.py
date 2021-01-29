@@ -194,7 +194,7 @@ class Scraper:
             return set()
 
         # Walk the page tree once to collect statistics on the page.
-        word_count, tokens = self.tokenizer.tokenize_page(resp.raw_response.text)
+        word_count, tokens = self.tokenizer.tokenize_page(resp.raw_response.content)
         self.auditor.handle_q2(url, word_count)
         self.auditor.handle_q3(url, tokens)
         self.auditor.handle_q4(url)
