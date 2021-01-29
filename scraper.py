@@ -6,7 +6,6 @@ from utils import get_logger
 from urllib.parse import urlparse
 from lxml import etree, html
 from utils.download import download
-from urllib.robotparser import RobotFileParser
 
 
 logger = get_logger('Scraper')
@@ -123,7 +122,6 @@ class _Enforcer:
 
     def __init__(self, config):
         self.large_page_threshold_bytes = 1.0e8
-        self.robots_parser = RobotFileParser()
         self.config = config
 
         logger.info(f"Setting large page threshold to be: {self.large_page_threshold_bytes} bytes.")
