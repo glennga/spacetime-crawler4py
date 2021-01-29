@@ -124,19 +124,23 @@ class _Enforcer:
 
     def __init__(self, config):
         self.large_page_threshold_bytes = 1.0e8
-        self.retry_table = dict()
+        self.retry_set = set()
         self.config = config
 
         logger.info(f"Setting large page threshold to be: {self.large_page_threshold_bytes} bytes.")
 
     def check_retry(self, url, resp) -> bool:
         # As per Piazza post @17, we are to retry requests that return a status 500.
-        if resp.status == 500 and url not in self.retry_table:
+        parsed = urlparse(url)
+
+        if resp.status == 500 and parsed.netloc.lower() not in self.retry_set:
             logger.warn(f"URL {url} returned status code 500. Retrying.")
+            self.retry_set.add(parsed.netloc.lower())
             return True
 
-        elif url in self.retry_table:
+        elif parsed.netloc.lower() in self.retry_set:
             logger.warn(f"URL {url} requested more than once. Not retrying again.")
+            self.retry_set.remove(parsed.netloc.lower())
             return False
 
         return False
@@ -240,6 +244,7 @@ class Scraper:
 
         # Walk the page tree once to collect statistics on the page.
         word_count, tokens = self.tokenizer.tokenize_page(resp.raw_response.content)
+        self.auditor.handle_q1(url)
         self.auditor.handle_q2(url, word_count)
         self.auditor.handle_q3(url, tokens)
         self.auditor.handle_q4(url)
