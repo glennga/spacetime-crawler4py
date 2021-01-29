@@ -44,11 +44,13 @@ class _Auditor:
     def __init__(self, config):
         self.config = config
         self.token_logger = get_logger('Token')
+        self.url_logger = get_logger('Link')
         with shelve.open(self.config.longest_page_file) as db:
             self.longest_page_stat = (db["largest"][0], db["largest"][1]) if "largest" in db else ("", 0)
 
     def handle_q1(self, url):
-        pass  # This is to be handled offline (i.e. looking at the log files).
+        parsed = urlparse(url)  # This is to be handled offline (i.e. looking at the log files).
+        self.url_logger.info(f'Auditing URL {parsed.netloc + parsed.path}')
 
     def handle_q2(self, url, n):
         if n > self.longest_page_stat[1]:
@@ -122,11 +124,24 @@ class _Enforcer:
 
     def __init__(self, config):
         self.large_page_threshold_bytes = 1.0e8
+        self.retry_table = dict()
         self.config = config
 
         logger.info(f"Setting large page threshold to be: {self.large_page_threshold_bytes} bytes.")
 
-    def enforce_before_crawl(self, url, resp) -> bool:
+    def check_retry(self, url, resp) -> bool:
+        # As per Piazza post @17, we are to retry requests that return a status 500.
+        if resp.status == 500 and url not in self.retry_table:
+            logger.warn(f"URL {url} returned status code 500. Retrying.")
+            return True
+
+        elif url in self.retry_table:
+            logger.warn(f"URL {url} requested more than once. Not retrying again.")
+            return False
+
+        return False
+
+    def validate_response(self, url, resp) -> bool:
         if resp.status != 200:
             logger.warn(f"Page found w/ non-200 status code: {url}")
             return False
@@ -138,26 +153,49 @@ class _Enforcer:
 
         return True
 
-    def _fetch_robots(self, parsed) -> float:
-        """ Time in seconds that indicates **additional** time to wait, based on the URL's robots.txt file. """
-        time.sleep(self.config.time_delay)
+    def _fetch_robots(self, parsed):
+        """ :return 1) the time in seconds that indicates **additional** time to wait,
+            and 2) a list of paths to avoid.  """
+        time.sleep(self.config.time_delay)  # Respect our configured delay...
+
         robots_url = parsed.scheme + '://' + parsed.netloc.lower() + '/robots.txt'
         resp = download(robots_url, self.config, logger)
+        crawl_delay_delta, disallowed_paths = 0, list()
+
         if resp.status != 200:
             logger.warn(f'Could not find robots.txt file for site {robots_url}.')
-            return 0
+
         else:
             for line in resp.raw_response.text.split('\n'):
-                if 'crawl-delay' in line:  # Crawl delays are in seconds.
-                    crawl_delay_s = float(line.split(':')[1].strip())
+                if len(line.strip()) > 0 and line.strip()[0] == '#':
+                    continue
+
+                if 'crawl-delay' in line.lower():  # Crawl delays are in seconds.
+                    crawl_delay_s = float(self._get_content_in_robots_line(line))
                     logger.info(f'crawl-delay found for site {robots_url} of {crawl_delay_s} seconds.')
-                    return max(crawl_delay_s, self.config.time_delay) - self.config.time_delay
+                    crawl_delay_delta = max(crawl_delay_s, self.config.time_delay) - self.config.time_delay
 
-            logger.info(f'Could not find crawl-delay in robots.txt file for site {robots_url}. Using default '
-                        f'delay of {self.config.time_delay} seconds.')
-            return 0
+                elif 'disallow' in line.lower():
+                    disallowed_path = self._get_content_in_robots_line(line)
+                    if '/' == disallowed_path[-1]:
+                        disallowed_path = disallowed_path[:-1]
 
-    def enforce_after_crawl(self, links) -> iter:
+                    logger.info(f'Disallowing path: {disallowed_path} for site {robots_url}.')
+                    disallowed_paths.append(disallowed_path.replace('*', '.*').replace('/', '\\/'))
+
+            if crawl_delay_delta == 0:
+                logger.info(f'Could not find crawl-delay in robots.txt file for site {robots_url}. Using default '
+                            f'delay of {self.config.time_delay} seconds.')
+
+        return crawl_delay_delta, disallowed_paths
+
+    @staticmethod
+    def _get_content_in_robots_line(line) -> str:
+        """ :return Text in between the ":" and the potential '#'. """
+        element = line.split(':')[1].strip()
+        return element if '#' not in element else element.split('#')[0].strip()
+
+    def enforce_links(self, links) -> iter:
         robots_table = shelve.open(self.config.robots_file)
         enforced_links = _Enforcer.URLIterable()
 
@@ -165,12 +203,16 @@ class _Enforcer:
             if not is_valid(link):
                 continue
 
-            parsed = urlparse(link)
+            parsed = urlparse(link)  # Update our robots table.
             if parsed.netloc.lower() not in robots_table:
                 robots_table[parsed.netloc.lower()] = self._fetch_robots(parsed)
 
+            crawl_delay_delta, disallowed_links = robots_table[parsed.netloc.lower()]
+            if any(re.match(disallowed_link, parsed.path) for disallowed_link in disallowed_links):
+                continue
+
             if True:  # TODO: add the checks for infinite traps and sets of similar pages w/ no information.
-                enforced_links.append_url(link, robots_table[parsed.netloc.lower()])
+                enforced_links.append_url(link, crawl_delay_delta)
 
         robots_table.close()
         return enforced_links
@@ -185,12 +227,15 @@ class Scraper:
 
     def scrape(self, url, resp):
         links = self.extract_next_links(url, resp)
-        enforced_links = self.enforcer.enforce_after_crawl(links)
+        enforced_links = self.enforcer.enforce_links(links)
         logger.info(f'Returning the following extracted links: {enforced_links}')
         return enforced_links
 
     def extract_next_links(self, url, resp) -> set:
-        if not self.enforcer.enforce_before_crawl(url, resp):
+        if self.enforcer.check_retry(url, resp):
+            return {url}
+
+        if not self.enforcer.validate_response(url, resp):
             return set()
 
         # Walk the page tree once to collect statistics on the page.
@@ -214,7 +259,7 @@ class Scraper:
                                 + (("?" + parsed.query) if len(parsed.query) > 0 else ""))
 
                 if url != filtered_url:
-                    logger.debug(f"Filtered URL: {filtered_url} from {url[2]}.")
+                    logger.debug(f"Filtered URL: {filtered_url} from {url}.")
                 extracted_links.append(filtered_url)
         except etree.ParserError as e:
             logger.error("Parser error for url " + resp.url + ": " + repr(e) + ".")
