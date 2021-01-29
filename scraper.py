@@ -33,7 +33,7 @@ class _Tokenizer:
             # must not be a script or a style tag.
             if element.text is not None and type(element.tag) == str and \
                     element.tag != 'script' and element.tag != 'style':
-                text_body += element.text
+                text_body += ' ' + element.text
 
         # As per Piazza (@18), stop words are not included in the "length of page".
         stopped_tokens = set([t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1 and
