@@ -3,7 +3,7 @@ import shelve
 import time
 
 from utils import get_logger
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from lxml import etree, html
 from utils.download import download
 
@@ -202,22 +202,20 @@ class Scraper:
         # Walk the page tree again to collect links.
         extracted_links = list()
         try:
-            html_response = html.document_fromstring(resp.raw_response.content if resp.raw_response is not None else "")
-            html_response.make_links_absolute(resp.url)
-            html_response_links = [link for link in html_response.iterlinks() if link[0]]
+            root = html.fromstring(resp.raw_response.content)
+            links = [urljoin(url, u.get('href')) for u in root.cssselect('a')]
 
-            for link in html_response_links:
-                if link[0].tag == "a" and link[1] == "href":
-                    parsed = urlparse(link[2])
-                    # Separated the filtered url parsing in case we need to log this
-                    filtered_url = (parsed.scheme + "://" + parsed.netloc + parsed.path
-                                           # TODO: Do we keep the params and query?
-                                           + ((";" + parsed.params) if len(parsed.params) > 0 else "")
-                                           + (("?" + parsed.query) if len(parsed.query) > 0 else "")
-                                           )
-                    if link[2] != filtered_url:
-                        logger.debug(f"Filtered URL: {filtered_url} from {link[2]}.")
-                    extracted_links.append(filtered_url)
+            for url in links:
+                parsed = urlparse(url)
+                # Separated the filtered url parsing in case we need to log this.
+                filtered_url = (parsed.scheme + "://" + parsed.netloc + parsed.path
+                                # TODO: Do we keep the params and query?
+                                + ((";" + parsed.params) if len(parsed.params) > 0 else "")
+                                + (("?" + parsed.query) if len(parsed.query) > 0 else ""))
+
+                if url != filtered_url:
+                    logger.debug(f"Filtered URL: {filtered_url} from {url[2]}.")
+                extracted_links.append(filtered_url)
         except etree.ParserError as e:
             logger.error("Parser error for url " + resp.url + ": " + repr(e) + ".")
 
