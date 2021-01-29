@@ -25,7 +25,7 @@ class _Tokenizer:
         )
 
     def tokenize_page(self, page_text):
-        """ :return: a) the length of the page in terms of tokens, and b) a set of non-stop word tokens. """
+        """ :return: a) the length of the page in terms of tokens, and b) a set of stop word tokens. """
         root = html.fromstring(page_text)
         text_body = ''
         for element in root.iter():
@@ -35,8 +35,10 @@ class _Tokenizer:
                     element.tag != 'script' and element.tag != 'style':
                 text_body += element.text
 
-        non_stopped_tokens = [t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1]
-        return len(non_stopped_tokens), set([t for t in non_stopped_tokens if t not in self.stop_words])
+        # As per Piazza (@18), stop words are not included in the "length of page".
+        stopped_tokens = set([t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1 and
+                              t.lower() not in self.stop_words])
+        return len(stopped_tokens), stopped_tokens
 
 
 class _Auditor:
