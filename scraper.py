@@ -1,6 +1,8 @@
 import re
 import shelve
 import time
+import pickle
+import hashlib
 
 from utils import get_logger
 from urllib.parse import urlparse, urljoin
@@ -12,37 +14,48 @@ logger = get_logger('Scraper')
 
 
 class _Tokenizer:
+    class Token:
+        def __init__(self, token: str, tag):
+            self.token = token
+            self.tag = tag
+
+        def __str__(self):
+            return self.token
+
     def __init__(self):
         self.stop_words = set(
-            'a,able,about,across,after,all,almost,also,am,among,an,and,any,are,as,at,be,because,been,' \
-            'but,by,can,cannot,could,dear,did,do,does,either,else,ever,every,for,from,get,got,had,has,' \
-            'have,he,her,hers,him,his,how,however,i,if,in,into,is,it,its,just,least,let,like,likely,' \
-            'may,me,might,most,must,my,neither,no,nor,not,of,off,often,on,only,or,other,our,own,rather,' \
-            'said,say,says,she,should,since,so,some,than,that,the,their,them,then,there,these,they,' \
-            'this,tis,to,too,twas,us,wants,was,we,were,what,when,where,which,while,who,whom,why,will,' \
+            'a,able,about,across,after,all,almost,also,am,among,an,and,any,are,as,at,be,because,been,'
+            'but,by,can,cannot,could,dear,did,do,does,either,else,ever,every,for,from,get,got,had,has,'
+            'have,he,her,hers,him,his,how,however,i,if,in,into,is,it,its,just,least,let,like,likely,'
+            'may,me,might,most,must,my,neither,no,nor,not,of,off,often,on,only,or,other,our,own,rather,'
+            'said,say,says,she,should,since,so,some,than,that,the,their,them,then,there,these,they,'
+            'this,tis,to,too,twas,us,wants,was,we,were,what,when,where,which,while,who,whom,why,will,'
             'with,would,yet,you,your'.split(',')
         )
 
-    def tokenize_page(self, page_text):
-        """ :return: a) the length of the page in terms of tokens, and b) a set of stop word tokens. """
+    def tokenize_page(self, url, page_text) -> list:
+        """ :return: A list of tokens. """
+        tokens = list()
+
         try:
             root = html.fromstring(page_text)
-            text_body = ''
             for element in root.iter():
                 # Conditions: a) text must be not null, b) the element must have a 'simple' tag, and c) the element tag
                 # must not be a script or a style tag.
                 if element.text is not None and type(element.tag) == str and \
                         element.tag != 'script' and element.tag != 'style':
-                    text_body += ' ' + element.text
 
-            # As per Piazza (@18), stop words are not included in the "length of page".
-            stopped_tokens = set([t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1 and
-                                  t.lower() not in self.stop_words])
-            return len(stopped_tokens), stopped_tokens
+                    # Conditions: a) tokens are delimited by non alphabet characters, b) tokens are greater than 1
+                    # character, and c) tokens are not stop words.
+                    for word in re.split(r"[^a-zA-Z]+", element.text):
+                        if len(word) > 1 and word.lower() not in self.stop_words:
+                            tokens.append(self.Token(word.lower(), element.tag))
+
+            return tokens
 
         except etree.ParserError as e:
-            logger.error("tokenize_page: Parser error: " + repr(e) + ".")
-            return 0, set()
+            logger.error(f'Could not tokenize page for URL {url}. Error: {e}')
+            return list()
 
 
 class _Auditor:
@@ -71,10 +84,11 @@ class _Auditor:
             for token in tokens:
                 if token and token not in db:
                     db[token] = 1
-                    #token_logger.info(f'New token added to dictionary: {token}')
+                    self.token_logger.debug(f'New token added to dictionary: {token}')
+
                 elif token:
                     db[token] += 1
-                    #logger.info(f'Incrementing token count for token: {token}')
+                    self.token_logger.debug(f'Incrementing token count for token: {token}')
             new_token_db = set(token[0] for token in sorted(db.items(), key=lambda x: [-x[1], x[0]])[:50])
 
             words_entering = set(token for token in new_token_db if token not in old_token_db)
@@ -160,6 +174,25 @@ class _Enforcer:
 
         return True
 
+    def validate_tokens(self, url, tokens) -> bool:
+        """ :return True if a) the token count of paragraph tags is non-zero and b) these paragraph tokens have not
+            been found elsewhere. False otherwise. """
+        paragraph_tokens = list(t for t in tokens if t.tag == 'p')
+        if len(paragraph_tokens) == 0:
+            logger.debug(f"URL {url} found without any paragraph tags. Skipping.")
+            return False
+
+        token_hash = hashlib.md5(pickle.dumps(paragraph_tokens)).hexdigest()
+        with shelve.open(self.config.tokens_file) as tokens_shelf:
+            if token_hash in tokens_shelf:
+                logger.debug(f"URL {url} found with similar content to URL {tokens_shelf[token_hash]}.")
+                return False
+
+            else:
+                logger.debug(f"URL {url} has a unique token hash: {token_hash}.")
+                tokens_shelf[token_hash] = url
+                return True
+
     def _fetch_robots(self, parsed):
         """ :return 1) the time in seconds that indicates **additional** time to wait,
             and 2) a list of paths to avoid.  """
@@ -222,8 +255,7 @@ class _Enforcer:
             if any(re.match(disallowed_link, parsed.path) for disallowed_link in disallowed_links):
                 continue
 
-            if True:  # TODO: add the checks for infinite traps and sets of similar pages w/ no information.
-                enforced_links.append_url(link, crawl_delay_delta)
+            enforced_links.append_url(link, crawl_delay_delta)
 
         robots_table.close()
         return enforced_links
@@ -255,11 +287,16 @@ class Scraper:
         if not self.enforcer.validate_response(url, resp):
             return set(), False
 
-        # Walk the page tree once to collect statistics on the page.
-        word_count, tokens = self.tokenizer.tokenize_page(resp.raw_response.content)
+        # Walk the page tree once to tokenize.
+        tokens = self.tokenizer.tokenize_page(url, resp.raw_response.content)
+        if not self.enforcer.validate_tokens(url, tokens):
+            return set(), False
+
+        # Audit this page (for our report questions).
+        raw_tokens = set(str(t) for t in tokens)
         self.auditor.handle_q1(url)
-        self.auditor.handle_q2(url, word_count)
-        self.auditor.handle_q3(url, tokens)
+        self.auditor.handle_q2(url, len(raw_tokens))
+        self.auditor.handle_q3(url, raw_tokens)
         self.auditor.handle_q4(url)
 
         # Walk the page tree again to collect links.

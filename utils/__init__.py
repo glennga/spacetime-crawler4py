@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 def get_logger(name, filename=None):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     if not os.path.exists("Logs"):
         os.makedirs("Logs")
     fh = logging.FileHandler(f"Logs/{filename if filename else name}.log")

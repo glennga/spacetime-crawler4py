@@ -15,6 +15,7 @@ class Config(object):
         self.common_words_file = config["LOCAL PROPERTIES"]["COMMONWORDS"]
         self.ics_subdomain_file = config["LOCAL PROPERTIES"]["ICSSUBDOMAIN"]
         self.robots_file = config["LOCAL PROPERTIES"]["ROBOTS"]
+        self.tokens_file = config["LOCAL PROPERTIES"]["TOKENHASH"]
 
         self.host = config["CONNECTION"]["HOST"]
         self.port = int(config["CONNECTION"]["PORT"])
@@ -26,4 +27,5 @@ class Config(object):
 
     def get_scraper_files(self):
         """ :return All files used by our scraper. """
-        return [self.longest_page_file, self.common_words_file, self.ics_subdomain_file, self.robots_file]
+        return [self.longest_page_file, self.common_words_file, self.ics_subdomain_file, self.robots_file,
+                self.tokens_file]
