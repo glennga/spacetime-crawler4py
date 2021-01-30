@@ -25,19 +25,23 @@ class _Tokenizer:
 
     def tokenize_page(self, page_text):
         """ :return: a) the length of the page in terms of tokens, and b) a set of stop word tokens. """
-        root = html.fromstring(page_text)
-        text_body = ''
-        for element in root.iter():
-            # Conditions: a) text must be not null, b) the element must have a 'simple' tag, and c) the element tag
-            # must not be a script or a style tag.
-            if element.text is not None and type(element.tag) == str and \
-                    element.tag != 'script' and element.tag != 'style':
-                text_body += ' ' + element.text
+        try:
+            root = html.fromstring(page_text)
+            text_body = ''
+            for element in root.iter():
+                # Conditions: a) text must be not null, b) the element must have a 'simple' tag, and c) the element tag
+                # must not be a script or a style tag.
+                if element.text is not None and type(element.tag) == str and \
+                        element.tag != 'script' and element.tag != 'style':
+                    text_body += ' ' + element.text
 
-        # As per Piazza (@18), stop words are not included in the "length of page".
-        stopped_tokens = set([t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1 and
-                              t.lower() not in self.stop_words])
-        return len(stopped_tokens), stopped_tokens
+            # As per Piazza (@18), stop words are not included in the "length of page".
+            stopped_tokens = set([t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1 and
+                                  t.lower() not in self.stop_words])
+            return len(stopped_tokens), stopped_tokens
+        except etree.ParserError as e:
+            logger.error("tokenize_page: Parser error: " + repr(e) + ".")
+            return 0, set()
 
 
 class _Auditor:
@@ -267,7 +271,7 @@ class Scraper:
                     logger.debug(f"Filtered URL: {filtered_url} from {url}.")
                 extracted_links.append(filtered_url)
         except etree.ParserError as e:
-            logger.error("Parser error for url " + resp.url + ": " + repr(e) + ".")
+            logger.error("extract_next_links: Parser error for url " + resp.url + ": " + repr(e) + ".")
 
         return set(extracted_links)
 
