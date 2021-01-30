@@ -135,16 +135,19 @@ class _Enforcer:
 
     def check_retry(self, url, resp) -> bool:
         # As per Piazza post @17, we are to retry requests that return a status 500.
-        parsed = urlparse(url)
+        # TODO: Keep netloc or keep whole url?
+        #parsed = urlparse(url)
 
-        if resp.status == 500 and parsed.netloc.lower() not in self.retry_set:
+        #logger.info("check_retry: " + url)
+
+        if resp.status == 500 and url not in self.retry_set:
             logger.warn(f"URL {url} returned status code 500. Retrying.")
-            self.retry_set.add(parsed.netloc.lower())
+            self.retry_set.add(url)
             return True
 
-        elif parsed.netloc.lower() in self.retry_set:
+        elif url in self.retry_set:
             logger.warn(f"URL {url} requested more than once. Not retrying again.")
-            self.retry_set.remove(parsed.netloc.lower())
+            self.retry_set.remove(url)
             return False
 
         return False
@@ -234,17 +237,18 @@ class Scraper:
         self.enforcer = _Enforcer(self.config)
 
     def scrape(self, url, resp):
-        links = self.extract_next_links(url, resp)
+        links, retry = self.extract_next_links(url, resp)
         enforced_links = self.enforcer.enforce_links(links)
         logger.info(f'Returning the following extracted links: {enforced_links}')
-        return enforced_links
+        return enforced_links, retry
 
-    def extract_next_links(self, url, resp) -> set:
+    # Return true if we need to redo this URL (retry condition)
+    def extract_next_links(self, url, resp) -> (set, bool):
         if self.enforcer.check_retry(url, resp):
-            return {url}
+            return {url}, True
 
         if not self.enforcer.validate_response(url, resp):
-            return set()
+            return set(), False
 
         # Walk the page tree once to collect statistics on the page.
         word_count, tokens = self.tokenizer.tokenize_page(resp.raw_response.content)
@@ -273,7 +277,7 @@ class Scraper:
         except etree.ParserError as e:
             logger.error("extract_next_links: Parser error for url " + resp.url + ": " + repr(e) + ".")
 
-        return set(extracted_links)
+        return set(extracted_links), False
 
 
 def is_valid(url):

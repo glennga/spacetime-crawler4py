@@ -54,9 +54,16 @@ class Frontier(object):
             return None
 
     def add_url(self, url):
+        self.add_url_wrapper(url, False)
+
+    # add_url_bypass skils the url hash check
+    def add_url_force(self, url):
+        self.add_url_wrapper(url, True)
+
+    def add_url_wrapper(self, url, force):
         url = normalize(url)
         urlhash = get_urlhash(url)
-        if urlhash not in self.save:
+        if force or urlhash not in self.save:
             self.save[urlhash] = (url, False)
             self.save.sync()
             self.to_be_downloaded.append(url)
