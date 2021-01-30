@@ -39,6 +39,7 @@ class _Tokenizer:
             stopped_tokens = set([t.lower() for t in re.split(r"[^a-zA-Z]+", text_body) if len(t) > 1 and
                                   t.lower() not in self.stop_words])
             return len(stopped_tokens), stopped_tokens
+
         except etree.ParserError as e:
             logger.error("tokenize_page: Parser error: " + repr(e) + ".")
             return 0, set()
@@ -135,11 +136,6 @@ class _Enforcer:
 
     def check_retry(self, url, resp) -> bool:
         # As per Piazza post @17, we are to retry requests that return a status 500.
-        # TODO: Keep netloc or keep whole url?
-        #parsed = urlparse(url)
-
-        #logger.info("check_retry: " + url)
-
         if resp.status == 500 and url not in self.retry_set:
             logger.warn(f"URL {url} returned status code 500. Retrying.")
             self.retry_set.add(url)
@@ -177,22 +173,26 @@ class _Enforcer:
             logger.warn(f'Could not find robots.txt file for site {robots_url}.')
 
         else:
-            for line in resp.raw_response.text.split('\n'):
-                if len(line.strip()) > 0 and line.strip()[0] == '#':
-                    continue
+            try:
+                for line in resp.raw_response.text.split('\n'):
+                    if len(line.strip()) > 0 and line.strip()[0] == '#':
+                        continue
 
-                if 'crawl-delay' in line.lower():  # Crawl delays are in seconds.
-                    crawl_delay_s = float(self._get_content_in_robots_line(line))
-                    logger.info(f'crawl-delay found for site {robots_url} of {crawl_delay_s} seconds.')
-                    crawl_delay_delta = max(crawl_delay_s, self.config.time_delay) - self.config.time_delay
+                    if 'crawl-delay' in line.lower():  # Crawl delays are in seconds.
+                        crawl_delay_s = float(self._get_content_in_robots_line(line))
+                        logger.info(f'crawl-delay found for site {robots_url} of {crawl_delay_s} seconds.')
+                        crawl_delay_delta = max(crawl_delay_s, self.config.time_delay) - self.config.time_delay
 
-                elif 'disallow' in line.lower():
-                    disallowed_path = self._get_content_in_robots_line(line)
-                    if '/' == disallowed_path[-1]:
-                        disallowed_path = disallowed_path[:-1]
+                    elif 'disallow' in line.lower():
+                        disallowed_path = self._get_content_in_robots_line(line)
+                        if '/' == disallowed_path[-1]:
+                            disallowed_path = disallowed_path[:-1]
 
-                    logger.info(f'Disallowing path: {disallowed_path} for site {robots_url}.')
-                    disallowed_paths.append(disallowed_path.replace('*', '.*').replace('/', '\\/'))
+                        logger.info(f'Disallowing path: {disallowed_path} for site {robots_url}.')
+                        disallowed_paths.append(disallowed_path.replace('*', '.*').replace('/', '\\/'))
+
+            except IndexError as e:
+                logger.warn(f'Malformed robots.txt file for {robots_url}. Swallowing error: {e}')
 
             if crawl_delay_delta == 0:
                 logger.info(f'Could not find crawl-delay in robots.txt file for site {robots_url}. Using default '
@@ -236,13 +236,18 @@ class Scraper:
         self.auditor = _Auditor(self.config)
         self.enforcer = _Enforcer(self.config)
 
-    def scrape(self, url, resp):
-        links, retry = self.extract_next_links(url, resp)
-        enforced_links = self.enforcer.enforce_links(links)
-        logger.info(f'Returning the following extracted links: {enforced_links}')
-        return enforced_links, retry
+    def scrape(self, url, resp) -> (set, bool):
+        # noinspection PyBroadException
+        try:
+            links, retry = self.extract_next_links(url, resp)
+            enforced_links = self.enforcer.enforce_links(links)
+            logger.info(f'Returning the following extracted links: {enforced_links}')
+            return enforced_links, retry
 
-    # Return true if we need to redo this URL (retry condition)
+        except Exception as e:
+            logger.error(f"Error caught and swallowed for URL {url}! {e}")
+            return list(), False
+
     def extract_next_links(self, url, resp) -> (set, bool):
         if self.enforcer.check_retry(url, resp):
             return {url}, True
@@ -274,6 +279,7 @@ class Scraper:
                 if url != filtered_url:
                     logger.debug(f"Filtered URL: {filtered_url} from {url}.")
                 extracted_links.append(filtered_url)
+
         except etree.ParserError as e:
             logger.error("extract_next_links: Parser error for url " + resp.url + ": " + repr(e) + ".")
 
