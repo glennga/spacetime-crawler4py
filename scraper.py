@@ -40,16 +40,19 @@ class _Tokenizer:
         try:
             root = html.fromstring(page_text)
             for element in root.iter():
-                # Conditions: a) text must be not null, b) the element must have a 'simple' tag, and c) the element tag
-                # must not be a script or a style tag.
-                if element.text is not None and type(element.tag) == str and \
-                        element.tag != 'script' and element.tag != 'style':
+                try:
+                    # Conditions: a) text must be not null, b) the element must have a 'simple' tag, and c) the element tag
+                    # must not be a script or a style tag.
+                    if element.text is not None and type(element.tag) == str and \
+                            element.tag != 'script' and element.tag != 'style':
 
-                    # Conditions: a) tokens are delimited by non alphabet characters, b) tokens are greater than 1
-                    # character, and c) tokens are not stop words.
-                    for word in re.split(r"[^a-zA-Z]+", element.text):
-                        if len(word) > 1 and word.lower() not in self.stop_words:
-                            tokens.append(self.Token(word.lower(), element.tag))
+                        # Conditions: a) tokens are delimited by non alphabet characters, b) tokens are greater than 1
+                        # character, and c) tokens are not stop words.
+                        for word in re.split(r"[^a-zA-Z]+", element.text):
+                            if len(word) > 1 and word.lower() not in self.stop_words:
+                                tokens.append(self.Token(word.lower(), element.tag))
+                except UnicodeDecodeError as e:
+                    logger.error("tokenize_page: Unicode error parsing an element: " + repr(e) + ".")
 
             return tokens
 
