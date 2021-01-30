@@ -231,7 +231,7 @@ class _Enforcer:
                             disallowed_path = disallowed_path[:-1]
 
                         logger.info(f'Disallowing path: {disallowed_path} for site {robots_url}.')
-                        disallowed_paths.append(disallowed_path.replace('*', '.*').replace('/', '\\/'))
+                        disallowed_paths.append(disallowed_path.replace('*', '.*').replace('/', '\/'))
 
             except IndexError as e:
                 logger.warn(f'Malformed robots.txt file for {robots_url}. Swallowing error: {e}')
