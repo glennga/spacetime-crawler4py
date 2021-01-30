@@ -200,11 +200,16 @@ class _Enforcer:
     def _fetch_robots(self, parsed):
         """ :return 1) the time in seconds that indicates **additional** time to wait,
             and 2) a list of paths to avoid.  """
-        time.sleep(self.config.time_delay)  # Respect our configured delay...
+        crawl_delay_delta, disallowed_paths = 0, list()
 
         robots_url = parsed.scheme + '://' + parsed.netloc.lower() + '/robots.txt'
-        resp = download(robots_url, self.config, logger)
-        crawl_delay_delta, disallowed_paths = 0, list()
+        if not is_valid(robots_url):
+            logger.warn(f"URL {robots_url} is invalid, and cannot be fetched.")
+            return crawl_delay_delta, disallowed_paths
+
+        else:
+            time.sleep(self.config.time_delay)  # Respect our configured delay...
+            resp = download(robots_url, self.config, logger)
 
         if resp.status != 200:
             logger.warn(f'Could not find robots.txt file for site {robots_url}.')
