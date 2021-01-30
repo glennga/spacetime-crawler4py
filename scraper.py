@@ -41,8 +41,8 @@ class _Tokenizer:
             root = html.fromstring(page_text)
             for element in root.iter():
                 try:
-                    # Conditions: a) text must be not null, b) the element must have a 'simple' tag, and c) the element tag
-                    # must not be a script or a style tag.
+                    # Conditions: a) text must be not null, b) the element must have a 'simple' tag, and c) the
+                    # element tag must not be a script or a style tag.
                     if element.text is not None and type(element.tag) == str and \
                             element.tag != 'script' and element.tag != 'style':
 
@@ -51,8 +51,9 @@ class _Tokenizer:
                         for word in re.split(r"[^a-zA-Z]+", element.text):
                             if len(word) > 1 and word.lower() not in self.stop_words:
                                 tokens.append(self.Token(word.lower(), element.tag))
+
                 except UnicodeDecodeError as e:
-                    logger.error("tokenize_page: Unicode error parsing an element: " + repr(e) + ".")
+                    logger.warn(f"Unicode error parsing URL {url}. {e}.")
 
             return tokens
 
@@ -334,27 +335,27 @@ def is_valid(url):
             return False
 
         # Note: must be infix search to account for port numbers in net location.
-        elif not re.match(r".*\.ics\.uci\.edu.*|.*\.cs\.uci\.edu.*|.*\.informatics\.uci\.edu.*|"
-                          r".*\.stat\.uci\.edu.*", parsed.netloc.lower()) and \
-                not (re.match(r".*\.today\.uci\.edu.*", parsed.netloc.lower()) and
+        elif not re.match(r".*ics\.uci\.edu.*|.*cs\.uci\.edu.*|.*informatics\.uci\.edu.*|"
+                          r".*stat\.uci\.edu.*", parsed.netloc.lower()) and \
+                not (re.match(r".*today\.uci\.edu.*", parsed.netloc.lower()) and
                      re.match(r"/department/information_computer_sciences.*", parsed.path)):
             logger.debug(f"Invalid URL found: {url}. Not in valid set of domains.")
             return False
 
         elif re.match(
-            r".*\.(css|js|bmp|gif|jpe?g|ico"
-            + r"|png|tiff?|mid|mp2|mp3|mp4"
-            + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
-            + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
-            + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
-            + r"|epub|dll|cnf|tgz|sha1"
-            + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
+                r".*\.(css|js|bmp|gif|jpe?g|ico"
+                + r"|png|tiff?|mid|mp2|mp3|mp4"
+                + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
+                + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
+                + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
+                + r"|epub|dll|cnf|tgz|sha1"
+                + r"|thmx|mso|arff|rtf|jar|csv"
+                + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
             logger.debug(f"Invalid URL found: {url}. File type is invalid.")
             return False
 
         return True
 
-    except TypeError:
-        print("TypeError for ", parsed)
+    except TypeError as e:
+        logger.error(f'Type error found for. {e}')
         raise
