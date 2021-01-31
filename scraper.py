@@ -264,6 +264,10 @@ class _Enforcer:
             if any(re.match(disallowed_link, parsed.path) for disallowed_link in disallowed_links):
                 continue
 
+            # Avoid any URLs we explicitly mention avoiding in our config file.
+            if any(bool(link in x) for x in self.config.avoid_urls):
+                continue
+
             enforced_links.append_url(link, crawl_delay_delta)
 
         robots_table.close()
