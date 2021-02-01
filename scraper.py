@@ -107,7 +107,7 @@ class _Auditor:
         # Note: we are assuming that unique URLs are being given here.
         with shelve.open(self.config.ics_subdomain_file) as db:
             parsed = urlparse(url)
-            is_ics_subdomain = re.match(r".*\.ics\.uci\.edu.*", parsed.netloc.lower())
+            is_ics_subdomain = re.match(r"(www\.)?ics\.uci\.edu.*", parsed.netloc.lower())
             logger.debug('Subdomain check for ' + parsed.netloc.lower() + " returns " + repr(is_ics_subdomain))
             if is_ics_subdomain and parsed.netloc.lower() not in db:
                 db[parsed.netloc.lower()] = 1
@@ -340,9 +340,11 @@ def is_valid(url, config):
             return False
 
         # Note: must be infix search to account for port numbers in net location.
-        elif not re.match(r".*ics\.uci\.edu.*|.*cs\.uci\.edu.*|.*informatics\.uci\.edu.*|"
-                          r".*stat\.uci\.edu.*", parsed.netloc.lower()) and \
-                not (re.match(r".*today\.uci\.edu.*", parsed.netloc.lower()) and
+        elif not re.match(r"(www\.)?([a-zA-Z]*\.)*ics\.uci\.edu.*|"
+                          r"(www\.)?([a-zA-Z]*\.)*cs\.uci\.edu.*|"
+                          r"(www\.)?([a-zA-Z]*\.)*informatics\.uci\.edu.*|"
+                          r"(www\.)?([a-zA-Z]*\.)*stat\.uci\.edu.*", parsed.netloc.lower()) and \
+                not (re.match(r"(www\.)?([a-zA-Z]*\.)*today\.uci\.edu.*", parsed.netloc.lower()) and
                      re.match(r"/department/information_computer_sciences.*", parsed.path)):
             logger.debug(f"Invalid URL found: {url}. Not in valid set of domains.")
             return False
