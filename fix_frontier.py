@@ -32,7 +32,7 @@ class FrontierFixer:
                         if force_delete:
                             del db[key]
                         removed_count += 1
-                        removed_url_file.write(value[0] + "\n")
+                        removed_url_file.write(filtered_url + "\n")
                         # input("(enter to continue)")
             print("" + ("" if force_delete else "(Preview) ") + "Removed " + str(removed_count) + " links from the frontier (saved in ./removed_urls_frontier.txt)")
 
@@ -52,7 +52,7 @@ class FrontierFixer:
                         if force_delete:
                             del db[key]
                         removed_count += 1
-                        removed_url_file.write(value[0] + "\n")
+                        removed_url_file.write(filtered_url + "\n")
                         # input("(enter to continue)")
             print("" + ("" if force_delete else "(Preview) ") + "Removed " + str(removed_count) + " links from the tokenhash (saved in ./removed_urls_tokenhash.txt)")
 
