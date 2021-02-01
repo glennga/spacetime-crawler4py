@@ -347,11 +347,6 @@ def is_valid(url, config):
             logger.debug(f"Invalid URL found: {url}. Not in valid set of domains.")
             return False
 
-        elif config is not None:
-            avoid_urls = [urlparse(u) for u in config.avoid_urls]
-            if any(parsed.netloc == u.netloc and parsed.path == u.path for u in avoid_urls):
-                return False
-
         elif re.match(
                 r".*\.(css|js|bmp|gif|jpe?g|ico"
                 + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -363,6 +358,12 @@ def is_valid(url, config):
                 + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
             logger.debug(f"Invalid URL found: {url}. File type is invalid.")
             return False
+
+        elif config is not None:
+            avoid_urls = [urlparse(u) for u in config.avoid_urls]
+            if any(parsed.netloc == u.netloc and parsed.path == u.path for u in avoid_urls):
+                logger.debug(f"Invalid URL found: {url}. URL is on the avoid list.")
+                return False
 
         return True
 
