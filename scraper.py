@@ -340,11 +340,11 @@ def is_valid(url, config):
             return False
 
         # Note: must be infix search to account for port numbers in net location.
-        elif not re.match(r"(www\.)?([a-zA-Z0-9]*\.)*ics\.uci\.edu.*|"
-                          r"(www\.)?([a-zA-Z0-9]*\.)*cs\.uci\.edu.*|"
-                          r"(www\.)?([a-zA-Z0-9]*\.)*informatics\.uci\.edu.*|"
-                          r"(www\.)?([a-zA-Z0-9]*\.)*stat\.uci\.edu.*", parsed.netloc.lower()) and \
-                not (re.match(r"(www\.)?([a-zA-Z0-9]*\.)*today\.uci\.edu.*", parsed.netloc.lower()) and
+        elif not re.match(r"(www\.)?([a-zA-Z0-9\-]*\.)*ics\.uci\.edu.*|"
+                          r"(www\.)?([a-zA-Z0-9\-]*\.)*cs\.uci\.edu.*|"
+                          r"(www\.)?([a-zA-Z0-9\-]*\.)*informatics\.uci\.edu.*|"
+                          r"(www\.)?([a-zA-Z0-9\-]*\.)*stat\.uci\.edu.*", parsed.netloc.lower()) and \
+                not (re.match(r"(www\.)?([a-zA-Z0-9\-]*\.)*today\.uci\.edu.*", parsed.netloc.lower()) and
                      re.match(r"/department/information_computer_sciences.*", parsed.path)):
             logger.debug(f"Invalid URL found: {url}. Not in valid set of domains.")
             return False
