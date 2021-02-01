@@ -203,7 +203,7 @@ class _Enforcer:
         crawl_delay_delta, disallowed_paths = 0, list()
 
         robots_url = parsed.scheme + '://' + parsed.netloc.lower() + '/robots.txt'
-        if not is_valid(robots_url):
+        if not is_valid(robots_url, None):
             logger.warn(f"URL {robots_url} is invalid, and cannot be fetched.")
             return crawl_delay_delta, disallowed_paths
 
@@ -253,7 +253,7 @@ class _Enforcer:
         enforced_links = _Enforcer.URLIterable()
 
         for link in links:
-            if not is_valid(link):
+            if not is_valid(link, self.config):
                 continue
 
             parsed = urlparse(link)  # Update our robots table.
@@ -262,10 +262,6 @@ class _Enforcer:
 
             crawl_delay_delta, disallowed_links = robots_table[parsed.netloc.lower()]
             if any(re.match(disallowed_link, parsed.path) for disallowed_link in disallowed_links):
-                continue
-
-            # Avoid any URLs we explicitly mention avoiding in our config file.
-            if any(bool(link in x) for x in self.config.avoid_urls):
                 continue
 
             enforced_links.append_url(link, crawl_delay_delta)
@@ -336,7 +332,7 @@ class Scraper:
         return set(extracted_links), False
 
 
-def is_valid(url):
+def is_valid(url, config):
     try:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
@@ -350,6 +346,11 @@ def is_valid(url):
                      re.match(r"/department/information_computer_sciences.*", parsed.path)):
             logger.debug(f"Invalid URL found: {url}. Not in valid set of domains.")
             return False
+
+        elif config is not None:
+            avoid_urls = [urlparse(u) for u in config.avoid_urls]
+            if any(parsed.netloc == u.netloc and parsed.path == u.path for u in avoid_urls):
+                return False
 
         elif re.match(
                 r".*\.(css|js|bmp|gif|jpe?g|ico"

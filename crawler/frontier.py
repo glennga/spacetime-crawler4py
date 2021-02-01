@@ -29,7 +29,8 @@ class Frontier(object):
         self.save = shelve.open(self.config.save_file)
         if restart:
             for url in self.config.seed_urls:
-                self.add_url(url)
+                if is_valid(url, self.config):
+                    self.add_url(url)
         else:
             # Set the frontier state with contents of save file.
             self._parse_save_file()
@@ -42,7 +43,7 @@ class Frontier(object):
         total_count = len(self.save)
         tbd_count = 0
         for url, completed in self.save.values():
-            if not completed and is_valid(url):
+            if not completed and is_valid(url, self.config):
                 self.to_be_downloaded.append(url)
                 tbd_count += 1
         self.logger.info(
@@ -67,7 +68,7 @@ class Frontier(object):
             else:
                 random_restart = False
             return self.to_be_downloaded.pop(random.randrange(0,len(self.to_be_downloaded)) if random_restart else -1)
-        except IndexError:
+        except IndexError or ValueError:
             return None
 
     def add_url(self, url):
