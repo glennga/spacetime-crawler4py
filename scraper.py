@@ -107,7 +107,7 @@ class _Auditor:
         # Note: we are assuming that unique URLs are being given here.
         with shelve.open(self.config.ics_subdomain_file) as db:
             parsed = urlparse(url)
-            is_ics_subdomain = re.match(r"(www\.)?ics\.uci\.edu.*", parsed.netloc.lower())
+            is_ics_subdomain = re.match(r"(www\.)?([a-zA-Z0-9\-]*\.)*ics\.uci\.edu.*", parsed.netloc.lower())
             logger.debug('Subdomain check for ' + parsed.netloc.lower() + " returns " + repr(is_ics_subdomain))
             if is_ics_subdomain and parsed.netloc.lower() not in db:
                 db[parsed.netloc.lower()] = 1
