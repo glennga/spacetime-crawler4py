@@ -167,7 +167,10 @@ class _Enforcer:
         return False
 
     def validate_response(self, url, resp) -> bool:
-        if resp.status != 200:
+        if resp.status >= 600:
+            logger.warn(f"Page found w/ 600 series status code: {url} | Error code <{resp.status}>: {resp.error}")
+
+        elif resp.status != 200:
             logger.warn(f"Page found w/ non-200 status code: {url}")
             return False
 
